@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <limits.h>
 #include <sys/types.h>
+#include <stdbool.h>
 
 #define FORGE_VERSION "0.3.1"
 #define FORGE_MAX_REPOS 256
@@ -81,7 +82,7 @@ int forge_mkdir_p(const char *path, mode_t mode);
 int forge_path_join(char *out, size_t size, const char *a, const char *b);
 int forge_write_file(const char *path, const char *data, size_t len, mode_t mode);
 char *forge_read_file(const char *path, size_t *len_out);
-int forge_http_get(const char *url, ForgeBuffer *out, const char *accept);
+int forge_http_get(const char *url, ForgeBuffer *out, const char *accept, bool supress);
 void forge_buffer_free(ForgeBuffer *b);
 int forge_github_parts(const char *url, char *owner, size_t owner_sz,
                        char *repo, size_t repo_sz);

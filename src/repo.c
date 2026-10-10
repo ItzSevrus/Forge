@@ -108,7 +108,7 @@ static int check_repository_conf(const ForgeRepo *repo, const char *commit)
     }
     if (snprintf(url, sizeof(url), "https://raw.githubusercontent.com/%s/%s/%s/repository.conf", owner, name, commit) >= (int)sizeof(url)) return -1;
     ForgeBuffer b;
-    if (forge_http_get(url, &b, "text/plain") != 0) return -1;
+    if (forge_http_get(url, &b, "text/plain", false) != 0) return -1;
     int ok = strstr(b.data, "[repository]") != NULL;
     char *format = NULL;
 char *line = b.data;
@@ -177,7 +177,7 @@ static int sync_one(const ForgeConfig *cfg, const ForgeRepo *repo)
     char url[FORGE_MAX_URL];
     ForgeBuffer b;
     snprintf(url, sizeof(url), "https://api.github.com/repos/%s/%s", owner, name);
-    if (forge_http_get(url, &b, NULL) != 0) return 1;
+    if (forge_http_get(url, &b, NULL, false) != 0) return 1;
     char branch[256];
     if (forge_json_string(b.data, "default_branch", branch, sizeof(branch)) != 0) {
         fprintf(stderr, "Forge: Could not find default branch for %s/%s.\n", owner, name);
@@ -187,14 +187,14 @@ static int sync_one(const ForgeConfig *cfg, const ForgeRepo *repo)
     char encoded[768];
     if (url_encode_ref(branch, encoded, sizeof(encoded))) return 1;
     snprintf(url, sizeof(url), "https://api.github.com/repos/%s/%s/commits/%s", owner, name, encoded);
-    if (forge_http_get(url, &b, NULL) != 0) return 1;
+    if (forge_http_get(url, &b, NULL, false) != 0) return 1;
     char commit[128];
     if (forge_json_string(b.data, "sha", commit, sizeof(commit)) != 0) {
         fprintf(stderr, "Forge: Could not resolve commit for %s.\n", repo->name); forge_buffer_free(&b); return 1;
     }
     forge_buffer_free(&b);
     if (snprintf(url, sizeof(url), "https://api.github.com/repos/%s/%s/git/trees/%s?recursive=1", owner, name, commit) >= (int)sizeof(url)) return 1;
-    if (forge_http_get(url, &b, NULL) != 0) return 1;
+    if (forge_http_get(url, &b, NULL, false) != 0) return 1;
     if (strstr(b.data, "\"truncated\": true") || strstr(b.data, "\"truncated\":true")) {
         fprintf(stderr, "Forge: GitHub returned a truncated tree for '%s'; this repository is too large for one index request.\n", repo->name);
         forge_buffer_free(&b); return 1;
@@ -298,7 +298,7 @@ static int repo_validate(const ForgeConfig *cfg, const ForgeRepo repos[], size_t
                 int urln = snprintf(url, sizeof(url), "https://raw.githubusercontent.com/%s/%s/%s/%s", owner, repo_name, commit, tab);
                 if (urln < 0 || (size_t)urln >= sizeof(url)) { failed = repo_failed = 1; continue; }
                 ForgeBuffer b; char err[256] = "manifest parse failed"; ForgePackage pkg;
-                if (forge_http_get(url, &b, "text/plain") != 0) { failed = repo_failed = 1; continue; }
+                if (forge_http_get(url, &b, "text/plain", false) != 0) { failed = repo_failed = 1; continue; }
                 int parse_rc = forge_manifest_parse(b.data, &pkg, err, sizeof(err));
                 char manifest_key_name[FORGE_MAX_NAME];
                 const char *key_at = strchr(line, '@'); size_t key_len = key_at ? (size_t)(key_at - line) : strlen(line);

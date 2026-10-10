@@ -381,7 +381,7 @@ static int install_recursive(const ForgeConfig *cfg, const char *name, int yes,
                 int n = snprintf(message_url, sizeof(message_url), "https://raw.githubusercontent.com/%s/%s/%s/%s", owner_msg, repo_msg, commit, message_path);
                 if (n > 0 && (size_t)n < sizeof(message_url)) {
                     ForgeBuffer mb;
-                    if (forge_http_get(message_url, &mb, "text/markdown") == 0) {
+                    if (forge_http_get(message_url, &mb, "text/markdown", true) == 0) {
                         size_t copylen = mb.len < sizeof(message_text)-1 ? mb.len : sizeof(message_text)-1;
                         memcpy(message_text, mb.data, copylen); message_text[copylen] = '\0'; forge_buffer_free(&mb);
                     }

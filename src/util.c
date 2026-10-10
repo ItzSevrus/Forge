@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <libgen.h>
+#include <stdbool.h>
 
 #define DEFAULT_OFFICIAL_URL "https://github.com/ItzSevrus/forgeRepo"
 #define HTTP_LIMIT (32U * 1024U * 1024U)
@@ -36,7 +37,7 @@ static size_t curl_write(char *ptr, size_t size, size_t nmemb, void *userdata)
     return append_buffer((ForgeBuffer *)userdata, ptr, n) ? n : 0;
 }
 
-int forge_http_get(const char *url, ForgeBuffer *out, const char *accept)
+int forge_http_get(const char *url, ForgeBuffer *out, const char *accept, bool supress)
 {
     memset(out, 0, sizeof(*out));
     static int curl_ready = 0;
@@ -70,9 +71,11 @@ int forge_http_get(const char *url, ForgeBuffer *out, const char *accept)
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     if (rc != CURLE_OK || out->status < 200 || out->status >= 300) {
-        fprintf(stderr, "Forge: HTTP request failed for %s (HTTP %ld%s%s).\n",
+        if (!supress){
+            fprintf(stderr, "Forge: HTTP request failed for %s (HTTP %ld%s%s).\n",
                 url, out->status, rc == CURLE_OK ? "" : ", ",
                 rc == CURLE_OK ? "" : curl_easy_strerror(rc));
+        }
         forge_buffer_free(out);
         return -1;
     }

@@ -141,7 +141,7 @@ static int fetch_manifest(const PackageRef *ref, ForgePackage *pkg)
     char url[FORGE_MAX_URL];
     if (raw_url(ref, ref->path, url, sizeof(url))) return -1;
     ForgeBuffer b;
-    if (forge_http_get(url, &b, "text/plain") != 0) return -1;
+    if (forge_http_get(url, &b, "text/plain", false) != 0) return -1;
     char err[256];
     int rc = forge_manifest_parse(b.data, pkg, err, sizeof(err));
     if (rc) fprintf(stderr, "Forge: invalid manifest for %s: %s\n", ref->package_name, err);
