@@ -19,7 +19,10 @@ static void help(void)
     puts("  search <query>                Search package names in cached catalogs");
     puts("  info <name>@<version>         Fetch package metadata (@latest is the default)");
     puts("  install <name>@<version> [--yes] Install a version (@latest is the default)");
-    puts("  list                          List installed Forge packages");
+    puts("  list                          List installed packages and repositories");
+    puts("  upgrade                       Check installed packages for updates");
+    puts("  upgrade <package>             Upgrade one installed package");
+    puts("  clean                         Remove Forge cache and leftover build files");
     puts("  uninstall <package>           Remove files recorded for an installed package");
     puts("  help                          Show this help");
     puts("Examples: forge install hello-world@latest | forge install hello-world@v1.0.0");
@@ -55,6 +58,14 @@ int main(int argc, char **argv)
         return forge_install(&cfg, argv[2], yes);
     }
     if (!strcmp(argv[1], "list")) return forge_list_installed(&cfg);
+    if (!strcmp(argv[1], "upgrade")) {
+        if (argc > 3) { fprintf(stderr, "Usage: forge upgrade [package]\n"); return 1; }
+        return forge_upgrade(&cfg, argc == 3 ? argv[2] : NULL);
+    }
+    if (!strcmp(argv[1], "clean")) {
+        if (argc != 2) { fprintf(stderr, "Usage: forge clean\n"); return 1; }
+        return forge_clean_cache(&cfg);
+    }
     if (!strcmp(argv[1], "uninstall") || !strcmp(argv[1], "remove")) {
         if (argc != 3) { fprintf(stderr, "Usage: forge uninstall <package>\n"); return 1; }
         return forge_uninstall(&cfg, argv[2]);

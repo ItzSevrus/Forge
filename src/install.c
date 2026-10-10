@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -46,7 +47,7 @@ static int download_file(const char *url, const char *path, const char *label)
     CURL *c = curl_easy_init();
     if (!c) { fclose(f); return -1; }
     struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, "User-Agent: Forge-Package-Manager/0.3.0");
+    headers = curl_slist_append(headers, "User-Agent: Forge-Package-Manager/0.3.1");
     DownloadProgress progress = {label, 0};
     fprintf(stderr, "\nDownloading %s\n  From: %s\n  To:   %s\n", label, url, path);
     curl_easy_setopt(c, CURLOPT_URL, url);
@@ -247,9 +248,10 @@ static int installed_marker(const ForgeConfig *cfg, const char *name, char *out,
     return forge_path_join(out, outsz, dir, name);
 }
 
-static int ask_install(const ForgePackage *pkg, int assume_yes)
+static int ask_install(const ForgePackage *pkg, int assume_yes, const char *message)
 {
     printf("\nPackage: %s %s\n%s\n", pkg->name, pkg->version, pkg->description);
+    if (message && *message) { puts("\n----- Package MESSAGE.md -----"); fputs(message, stdout); if (message[strlen(message)-1] != '\n') putchar('\n'); puts("----- End MESSAGE.md -----"); }
     puts("WARNING: Forge will execute this repository's build script as your user.");
     puts("Review the repository and build script before installing untrusted packages.");
     if (assume_yes) return 1;
@@ -366,7 +368,28 @@ static int install_recursive(const ForgeConfig *cfg, const char *name, int yes,
     if (!pkg.checksum[0]) {
         fprintf(stderr, "Forge: refusing to install '%s': source.checksum is empty. Add a SHA-256 checksum to forge.pkg.\n", name); return 1;
     }
-    if (!ask_install(&pkg, yes)) { puts("Installation cancelled."); return 1; }
+    /* MESSAGE.md is optional, fetched from the same version directory as forge.pkg. */
+    char owner_msg[128], repo_msg[128], message_path[2300], message_url[8192];
+    char message_text[8192] = "";
+    if (!forge_github_parts(repo_url, owner_msg, sizeof(owner_msg), repo_msg, sizeof(repo_msg))) {
+        const char *last = strrchr(manifest_path, '/');
+        if (last) {
+            size_t dirlen = (size_t)(last - manifest_path);
+            if (dirlen + sizeof("/MESSAGE.md") < sizeof(message_path)) {
+                memcpy(message_path, manifest_path, dirlen);
+                strcpy(message_path + dirlen, "/MESSAGE.md");
+                int n = snprintf(message_url, sizeof(message_url), "https://raw.githubusercontent.com/%s/%s/%s/%s", owner_msg, repo_msg, commit, message_path);
+                if (n > 0 && (size_t)n < sizeof(message_url)) {
+                    ForgeBuffer mb;
+                    if (forge_http_get(message_url, &mb, "text/markdown") == 0) {
+                        size_t copylen = mb.len < sizeof(message_text)-1 ? mb.len : sizeof(message_text)-1;
+                        memcpy(message_text, mb.data, copylen); message_text[copylen] = '\0'; forge_buffer_free(&mb);
+                    }
+                }
+            }
+        }
+    }
+    if (!ask_install(&pkg, yes, message_text)) { puts("Installation cancelled."); return 1; }
     /* Install declared Forge-package dependencies only after the user approves this package. */
     for (size_t i = 0; i < pkg.runtime_dep_count; i++)
         if (install_recursive(cfg, pkg.runtime_deps[i], yes, stack, depth + 1)) return 1;
@@ -470,21 +493,103 @@ int forge_list_installed(const ForgeConfig *cfg)
     char dir[PATH_MAX]; forge_path_join(dir, sizeof(dir), cfg->data_dir, "installed");
     DIR *d = opendir(dir);
     if (!d) { puts("No packages installed."); return 0; }
+    printf("%-22s %-14s %s\n", "PACKAGE", "VERSION", "REPOSITORY");
     struct dirent *e; size_t count = 0;
     while ((e = readdir(d)) != NULL) {
         if (e->d_name[0] == '.') continue;
         char path[PATH_MAX]; forge_path_join(path, sizeof(path), dir, e->d_name);
         FILE *f = fopen(path, "r"); if (!f) continue;
-        char line[PATH_MAX];
-        if (fgets(line, sizeof(line), f) && strncmp(line, "#package\t", 9) == 0) {
-            char name[FORGE_MAX_NAME], version[128];
-            if (sscanf(line + 9, "%63s %127s", name, version) == 2) {
-                printf("%-22s %s\n", name, version); count++;
-            }
+        char line[PATH_MAX], name[FORGE_MAX_NAME] = "", version[128] = "", repository[FORGE_MAX_NAME] = "unknown";
+        while (fgets(line, sizeof(line), f)) {
+            if (strncmp(line, "#package\t", 9) == 0) (void)sscanf(line + 9, "%63s %127s", name, version);
+            else if (strncmp(line, "#repository\t", 12) == 0) { line[strcspn(line, "\r\n")] = '\0'; snprintf(repository, sizeof(repository), "%.*s", (int)sizeof(repository) - 1, line + 12); }
         }
         fclose(f);
+        if (name[0] && version[0]) { printf("%-22s %-14s %s\n", name, version, repository); count++; }
     }
     closedir(d);
     if (!count) puts("No packages installed.");
     return 0;
+}
+
+static int installed_version_compare(const char *a, const char *b)
+{
+    if (*a == 'v' || *a == 'V') a++;
+    if (*b == 'v' || *b == 'V') b++;
+    const char *ap = a, *bp = b;
+    while (*ap && *bp) {
+        if (isdigit((unsigned char)*ap) && isdigit((unsigned char)*bp)) {
+            char *ae = NULL, *be = NULL;
+            unsigned long av = strtoul(ap, &ae, 10), bv = strtoul(bp, &be, 10);
+            ap = ae; bp = be;
+            if (av != bv) return av > bv ? 1 : -1;
+        } else if (*ap == '.' && *bp == '.') { ap++; bp++; }
+        else break;
+    }
+    int apre = strchr(a, '-') != NULL, bpre = strchr(b, '-') != NULL;
+    if (apre != bpre) return apre ? -1 : 1;
+    int c = strcasecmp(a, b);
+    return c > 0 ? 1 : c < 0 ? -1 : 0;
+}
+
+static int installed_version_repo(const char *marker, char *name, size_t namesz,
+                                  char *version, size_t versz, char *repo, size_t reposz)
+{
+    (void)namesz; (void)versz;
+    FILE *f = fopen(marker, "r"); if (!f) return -1;
+    char line[PATH_MAX]; name[0] = version[0] = repo[0] = '\0';
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "#package\t", 9) == 0) (void)sscanf(line + 9, "%63s %127s", name, version);
+        else if (strncmp(line, "#repository\t", 12) == 0) { line[strcspn(line, "\r\n")] = '\0'; snprintf(repo, reposz, "%.*s", (int)(reposz > 0 ? reposz - 1 : 0), line + 12); }
+    }
+    fclose(f); return name[0] && version[0] ? 0 : -1;
+}
+
+int forge_upgrade(const ForgeConfig *cfg, const char *requested)
+{
+    char dir[PATH_MAX]; forge_path_join(dir, sizeof(dir), cfg->data_dir, "installed");
+    DIR *d = opendir(dir);
+    if (!d) { puts("No installed packages to upgrade."); return 0; }
+    char targets[256][FORGE_MAX_NAME]; size_t count = 0; int found_requested = 0;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL && count < 256) {
+        if (e->d_name[0] == '.') continue;
+        if (requested && strcmp(e->d_name, requested)) continue;
+        char marker[PATH_MAX]; forge_path_join(marker, sizeof(marker), dir, e->d_name);
+        char name[FORGE_MAX_NAME], oldver[128], oldrepo[FORGE_MAX_NAME];
+        if (installed_version_repo(marker, name, sizeof(name), oldver, sizeof(oldver), oldrepo, sizeof(oldrepo))) continue;
+        if (requested && strcmp(name, requested)) continue;
+        if (requested) found_requested = 1;
+        char repo_name[FORGE_MAX_NAME], repo_url[FORGE_MAX_URL], manifest[2048], commit[128]; ForgePackage pkg;
+        if (forge_resolve_package(cfg, name, repo_name, sizeof(repo_name), repo_url, sizeof(repo_url), manifest, sizeof(manifest), commit, sizeof(commit), &pkg)) {
+            printf("[unknown] %s: unable to resolve latest version from synced catalogs.\n", name); continue;
+        }
+        int order = installed_version_compare(pkg.version, oldver);
+        if (order == 0) { printf("[current] %s %s (%s)\n", name, oldver, oldrepo); continue; }
+        if (order < 0) { printf("[newer]   %s %s is newer than catalog version %s; not downgrading.\n", name, oldver, pkg.version); continue; }
+        printf("[update]  %s: %s -> %s (repository: %s)\n", name, oldver, pkg.version, repo_name);
+        snprintf(targets[count++], FORGE_MAX_NAME, "%s", name);
+    }
+    closedir(d);
+    if (requested && !found_requested) { fprintf(stderr, "Forge: '%s' is not installed.\n", requested); return 1; }
+    if (!count) { puts("No available upgrades found."); return 0; }
+    for (size_t i = 0; i < count; i++) {
+        char marker[PATH_MAX], name[FORGE_MAX_NAME], oldver[128], oldrepo[FORGE_MAX_NAME];
+        if (installed_marker(cfg, targets[i], marker, sizeof(marker)) || installed_version_repo(marker, name, sizeof(name), oldver, sizeof(oldver), oldrepo, sizeof(oldrepo))) continue;
+        printf("Upgrade %s from %s? This replaces the currently installed version. [y/N] ", name, oldver); fflush(stdout);
+        char answer[32]; if (!fgets(answer, sizeof(answer), stdin) || (answer[0] != 'y' && answer[0] != 'Y')) { puts("Skipped."); continue; }
+        /* Current installer has no in-place replacement transaction; remove the old recorded files first. */
+        if (forge_remove_tree_files(cfg->prefix, marker) != 0 || unlink(marker) != 0) { fprintf(stderr, "Forge: could not remove old files for %s; upgrade skipped.\n", name); continue; }
+        if (forge_install(cfg, name, 0) != 0) fprintf(stderr, "Forge: upgrade failed for %s; the old version was removed. Reinstall it with 'forge install %s@%s'.\n", name, name, oldver);
+    }
+    return 0;
+}
+
+int forge_clean_cache(const ForgeConfig *cfg)
+{
+    printf("This removes Forge's cache, including downloaded files and temporary build trees. Installed packages and repository catalogs are kept.\nProceed? [y/N] "); fflush(stdout);
+    char answer[32]; if (!fgets(answer, sizeof(answer), stdin) || (answer[0] != 'y' && answer[0] != 'Y')) { puts("Cancelled."); return 1; }
+    char *args[] = {"rm", "-rf", "--", (char *)cfg->cache_dir, NULL};
+    if (run_argv(args) != 0 || forge_mkdir_p(cfg->cache_dir, 0700) != 0) { fprintf(stderr, "Forge: failed to clean cache directory %s.\n", cfg->cache_dir); return 1; }
+    printf("Forge cache cleaned: %s\n", cfg->cache_dir); return 0;
 }

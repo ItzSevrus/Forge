@@ -7,7 +7,7 @@
 #include <limits.h>
 #include <sys/types.h>
 
-#define FORGE_VERSION "0.3.0"
+#define FORGE_VERSION "0.3.1"
 #define FORGE_MAX_REPOS 256
 #define FORGE_MAX_NAME 64
 #define FORGE_MAX_URL 2048
@@ -71,6 +71,8 @@ int forge_info(const ForgeConfig *cfg, const char *name);
 int forge_install(const ForgeConfig *cfg, const char *name, int assume_yes);
 int forge_uninstall(const ForgeConfig *cfg, const char *name);
 int forge_list_installed(const ForgeConfig *cfg);
+int forge_upgrade(const ForgeConfig *cfg, const char *name);
+int forge_clean_cache(const ForgeConfig *cfg);
 int forge_resolve_package(const ForgeConfig *cfg, const char *name, char *repo_name, size_t repo_sz, char *repo_url, size_t url_sz, char *path, size_t path_sz, char *commit, size_t commit_sz, ForgePackage *pkg);
 int forge_manifest_parse(const char *text, ForgePackage *pkg, char *err, size_t errsz);
 int forge_manifest_validate(const ForgePackage *pkg, char *err, size_t errsz);
