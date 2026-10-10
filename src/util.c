@@ -10,7 +10,7 @@
 #include <fcntl.h>
 #include <libgen.h>
 
-#define DEFAULT_OFFICIAL_URL "https://github.com/GourSahil/forgeRepo"
+#define DEFAULT_OFFICIAL_URL "https://github.com/ItzSevrus/forgeRepo"
 #define HTTP_LIMIT (32U * 1024U * 1024U)
 
 static int append_buffer(ForgeBuffer *b, const char *data, size_t n)
