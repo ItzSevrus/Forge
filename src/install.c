@@ -2,7 +2,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include "forge.h"
+#include "../include/forge.h"
 
 #include <curl/curl.h>
 

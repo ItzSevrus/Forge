@@ -160,8 +160,6 @@ while (*line) {
 }
 if (!format)
     ok = 0;
-    fprintf(stderr, "DEBUG metadata validation result: %s\n",
-        ok ? "accepted" : "rejected");
     if (!ok) fprintf(stderr, "Forge: %s has invalid or unsupported repository.conf metadata.\n", repo->name);
     forge_buffer_free(&b);
     return ok ? 0 : -1;
